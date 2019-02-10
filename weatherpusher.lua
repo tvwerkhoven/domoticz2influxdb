@@ -27,10 +27,17 @@ return {
 			if (dev.temperature ~= lasttemperature) then
 				lasttemperature = dev.temperature
 				-- Push to influxDB
+				-- format v1
 				dz.openURL({
 					url = dz.data.influxURI,
 					method = 'POST',
 					postData = 'temperature,type=weather,device=wunderground value=' .. tostring(dev.temperature)
+				})
+				-- format v2
+				dz.openURL({
+					url = dz.data.influxURI,
+					method = 'POST',
+					postData = 'temperature outside_wunderground=' .. tostring(dev.temperature)
 				})
 			end
 		elseif (dev.idx == 9) then
