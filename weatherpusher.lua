@@ -57,7 +57,7 @@ return {
 			end
 		elseif (dev.idx == 13) then
 			if (dev.radiation ~= lastradiation) then
-				lastrain = dev.radiation
+				lastradiation = dev.radiation
 				dz.openURL({
 					url = dz.data.influxURI,
 					method = 'POST',
