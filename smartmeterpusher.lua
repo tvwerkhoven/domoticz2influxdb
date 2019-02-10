@@ -18,7 +18,7 @@ return {
 		lastusage = { initial = -1 },
 		lastreturn = { initial = -1 },
 		-- Influx database URI, including database name
-		influxURI = { initial = 'http://localhost:8086/write?db=DATABASE&precision=s' }
+		influxURI = { initial = 'http://localhost:8086/write?db=smarthome&precision=s' }
 	},
 	execute = function(dz, dev)
 		if (dev.changed) then
@@ -47,10 +47,19 @@ return {
 				--  return/usage can be reconstructed from positive or negative change
 				kaifa_energy = (dev.usage1 - dev.return1 + dev.usage2 - dev.return2)*3600
 				-- Format string as integer
+				-- format v1
 				dz.openURL({
 					url = dz.data.influxURI,
 					method = 'POST',
 					postData = 'energy,type=elec,device=kaifa value=' .. string.format("%d", kaifa_energy)
+				})
+
+				-- Format string as integer
+				-- format v2
+				dz.openURL({
+					url = dz.data.influxURI,
+					method = 'POST',
+					postData = 'energyv2 kaifa=' .. string.format("%d", kaifa_energy)
 				})
 			end
 
@@ -63,11 +72,19 @@ return {
 				
 				-- Push to influxDB here, as combined instantaneous power usage (or return).
 				-- We can reconstruct usage and generation from positive or negative values
+				-- format v1
 				kaifa_power = dz.data.lastusage - dz.data.lastreturn
 				dz.openURL({
 					url = dz.data.influxURI,
 					method = 'POST',
 					postData = 'power,type=elec,device=kaifa value=' .. string.format("%d", kaifa_power)
+				})
+
+				-- format v2
+				dz.openURL({
+					url = dz.data.influxURI,
+					method = 'POST',
+					postData = 'powerv2 kaifa=' .. string.format("%d", kaifa_power)
 				})
 
 			end
