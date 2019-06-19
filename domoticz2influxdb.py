@@ -5,9 +5,9 @@
 
 ### Settings
 # influxdb query strings
-METER_FORMAT="meter,device={dev_name},src=domoticz2influxdb value={value} counter={counter} {epoch_date:d}\n"
-MULTIMETER_FORMAT="multimeter,device={dev_name},src=domoticz2influxdb counter1={counter1} counter2={counter2} counter3={counter3} counter4={counter4} {epoch_date:d}\n"
-TEMPERATURE_FORMAT="temperature,type=heating,device={dev_name},subtype=actual,src=domoticz2influxdb temp={temp} setpoint={setpoint} {epoch_date:d}\n"
+METER_FORMAT="meter,device={dev_name},src=domoticz2influxdb value={value} counter={counter} {epoch_date:d}"
+MULTIMETER_FORMAT="multimeter,device={dev_name},src=domoticz2influxdb counter1={counter1} counter2={counter2} counter3={counter3} counter4={counter4} {epoch_date:d}"
+TEMPERATURE_FORMAT="temperature,type=heating,device={dev_name},subtype=actual,src=domoticz2influxdb temp={temp} setpoint={setpoint} {epoch_date:d}"
 
 ### Libraries
 import sqlite3
@@ -67,13 +67,12 @@ def get_meter(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"):
 	t = (dev_id,)
 
 	rows = c.execute("SELECT Value,Counter,Date FROM Meter_Calendar WHERE DeviceRowID = ?", t)
-	with open(outfile, 'a') as writeFile:
+	with open(outfile, 'w') as writeFile:
 		for value, counter, date in rows:
 			# Example: "18.74, Living Room, 2018-11-14'"
-			# Set date to midday local time by adding 12 hours
-			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
+			date_epoch = int((dt.datetime.strptime(date, "%Y-%m-%d") + dt.timedelta(1)).timestamp())
 			# Contruct influxdb query
-			row = query.format(dev_name=dev_name.replace(" ",""), value=value, counter=counter, epoch_date=date_epoch)
+			row = query.format(dev_name=dev_name.replace(" ",""), value=value, counter=counter, epoch_date=date_epoch)+"\n"
 			writeFile.write(row)
 
 
@@ -89,12 +88,13 @@ def get_multimeter(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv")
 	t = (dev_id,)
 
 	rows = c.execute("SELECT Counter1,Counter2,Counter3,Counter4,Date FROM MultiMeter_Calendar WHERE DeviceRowID = ?", t)
-	with open(outfile, 'a') as writeFile:
+	with open(outfile, 'w') as writeFile:
 		for c1, c2, c3, c4, date in rows:
-			# Set date to midday local time by adding 12 hours
-			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
+			# Daily measurements of counters reflect the state at the end of day, 
+			# so we add one day to reflect the correct date for meter reading
+			date_epoch = int((dt.datetime.strptime(date, "%Y-%m-%d") + dt.timedelta(1)).timestamp())
 			# Contruct influxdb query
-			row = query.format(dev_name=dev_name.replace(" ",""), counter1=c1, counter2=c2, counter3=c3, counter4=c4, countersum=c1-c2+c3-c4, epoch_date=date_epoch)
+			row = query.format(dev_name=dev_name.replace(" ",""), counter1=c1, counter2=c2, counter3=c3, counter4=c4, countersum=c1-c2+c3-c4, epoch_date=date_epoch)+"\n"
 			writeFile.write(row)
 
 def get_temperature(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"):
@@ -109,13 +109,13 @@ def get_temperature(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"
 	t = (dev_id,)
 
 	rows = c.execute("SELECT Temp_Avg,SetPoint_Avg,Date FROM Temperature_Calendar WHERE DeviceRowID = ?", t)
-	with open(outfile, 'a') as writeFile:
+	with open(outfile, 'w') as writeFile:
 		for temp, setpoint, date in rows:
 			# Example: "18.74, Living Room, 2018-11-14'"
 			# Set date to midday local time by adding 12 hours
-			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
+			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp() + 12*3600) 
 			# Contruct influxdb query
-			row = query.format(dev_name=dev_name.replace(" ",""), temp=temp, setpoint=setpoint, epoch_date=date_epoch)
+			row = query.format(dev_name=dev_name.replace(" ",""), temp=temp, setpoint=setpoint, epoch_date=date_epoch)+"\n"
 			writeFile.write(row)
 
 
