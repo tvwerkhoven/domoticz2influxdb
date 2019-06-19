@@ -5,8 +5,9 @@
 
 ### Settings
 # influxdb query strings
-TEMPERATURE_FORMAT="temperature,type=heating,device={dev_name},subtype=actual,src=domoticz2influxdb temp={temp} setpoint={setpoint} {epoch_date:d}\n"
 METER_FORMAT="meter,device={dev_name},src=domoticz2influxdb value={value} counter={counter} {epoch_date:d}\n"
+MULTIMETER_FORMAT="multimeter,device={dev_name},src=domoticz2influxdb counter1={counter1} counter2={counter2} counter3={counter3} counter4={counter4} {epoch_date:d}\n"
+TEMPERATURE_FORMAT="temperature,type=heating,device={dev_name},subtype=actual,src=domoticz2influxdb temp={temp} setpoint={setpoint} {epoch_date:d}\n"
 
 ### Libraries
 import sqlite3
@@ -41,7 +42,22 @@ def get_devices(dbpath):
 
 	return devices
 
-def get_meter(dbpath, dev_id, dev_name, outfile="./influx_data.csv"):
+def get_data(dbpath, dev_id, meterquery, multimeterquery, tempquery, outfile="./influx_data.csv"):
+	# For any device, get device type, then query data using specialized
+	# query functions
+	devs = get_devices(dbpath)
+	dev_name = devs[dev_id]['dev_name']
+
+	if (devs[dev_id]['table'] == "Meter"):
+		get_meter(dbpath, dev_id, dev_name, meterquery, outfile)
+	elif (devs[dev_id]['table'] == "MultiMeter"):
+		get_multimeter(dbpath, dev_id, dev_name, multimeterquery, outfile)
+	elif (devs[dev_id]['table'] == "Temperature"):
+		get_temperature(dbpath, dev_id, dev_name, tempquery, outfile)
+	else:
+		print ("Meter type not supported")
+
+def get_meter(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"):
 	"""
 	Get meter data 
 	"""
@@ -57,21 +73,31 @@ def get_meter(dbpath, dev_id, dev_name, outfile="./influx_data.csv"):
 			# Set date to midday local time by adding 12 hours
 			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
 			# Contruct influxdb query
-			row = METER_FORMAT.format(dev_name=dev_name.replace(" ",""), value=value, counter=counter, epoch_date=date_epoch)
+			row = query.format(dev_name=dev_name.replace(" ",""), value=value, counter=counter, epoch_date=date_epoch)
 			writeFile.write(row)
 
 
-def get_multimeter(dbpath, dev_id, dev_name, outfile="./influx_data.csv"):
+def get_multimeter(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"):
 	"""
 	Get multimeter data 
 
-	Source: DeviceRowID, Value, Counter, Date
-	Target: temperature,<nametag>=<name>,type='heating',subtype='<actual|setpoint>' value=Temp_Avg <timestamp>
-
+	Source: DeviceRowID, Value1-6, Counter1-4, Date
 	"""
-	pass
+	conn = sqlite3.connect(dbpath)
+	c = conn.cursor()
 
-def get_temperature(dbpath, dev_id, dev_name, outfile="./influx_data.csv"):
+	t = (dev_id,)
+
+	rows = c.execute("SELECT Counter1,Counter2,Counter3,Counter4,Date FROM MultiMeter_Calendar WHERE DeviceRowID = ?", t)
+	with open(outfile, 'a') as writeFile:
+		for c1, c2, c3, c4, date in rows:
+			# Set date to midday local time by adding 12 hours
+			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
+			# Contruct influxdb query
+			row = query.format(dev_name=dev_name.replace(" ",""), counter1=c1, counter2=c2, counter3=c3, counter4=c4, countersum=c1-c2+c3-c4, epoch_date=date_epoch)
+			writeFile.write(row)
+
+def get_temperature(dbpath, dev_id, dev_name, query, outfile="./influx_data.csv"):
 	"""
 	Get temperature sensor data
 	Source: DeviceRowID, Temp_Min, Temp_Max, Temp_Avg, ... SetPoint_Min, SetPoint_Max, SetPoint_Avg, Date
@@ -89,7 +115,7 @@ def get_temperature(dbpath, dev_id, dev_name, outfile="./influx_data.csv"):
 			# Set date to midday local time by adding 12 hours
 			date_epoch = int(dt.datetime.strptime(date, "%Y-%m-%d").timestamp()+ 12*3600) 
 			# Contruct influxdb query
-			row = TEMPERATURE_FORMAT.format(dev_name=dev_name.replace(" ",""), temp=temp, setpoint=setpoint, epoch_date=date_epoch)
+			row = query.format(dev_name=dev_name.replace(" ",""), temp=temp, setpoint=setpoint, epoch_date=date_epoch)
 			writeFile.write(row)
 
 
@@ -97,21 +123,24 @@ def main():
 	parser = argparse.ArgumentParser(description='Convert domoticz database to influxdb.')
 
 	parser.add_argument('--inspect', action='store_true',
-		help='only inspect database file and print available devices')
+		help='inspect database file and print available devices')
 
-	parser.add_argument('--tempids', metavar='id', type=int, nargs='*',
-		help='device ids of temperature sensors to process')
-	parser.add_argument('--tempquery', metavar='query',
-		default=TEMPERATURE_FORMAT, help='infludb line query template to \
-		format temperature data. Available variables: dev_name, temp, \
-		setpoint, epoch_date')
-
-	parser.add_argument('--meterids', metavar='id', type=int, nargs='*',
-		help='device ids of meter sensors to process')
+	parser.add_argument('--devids', metavar='id', type=int, nargs='*',
+		help='device ids of sensors to process')
+	
 	parser.add_argument('--meterquery', metavar='query',
-		default=METER_FORMAT, help='infludb line query template to \
+		default=METER_FORMAT, help='influxdb line query template to \
 		format meter data. Available variables: dev_name, value, usage, \
 		epoch_date')
+	parser.add_argument('--multimeterquery', metavar='query',
+		default=MULTIMETER_FORMAT, help='influxdb line query template to \
+		format multimeter data. Available variables: dev_name, counter1, \
+		counter2, counter3, counter4, epoch_date, countersum \
+		(=counter1-counter2+counter3-counter4)')
+	parser.add_argument('--tempquery', metavar='query',
+		default=TEMPERATURE_FORMAT, help='influxdb line query template to \
+		format temperature data. Available variables: dev_name, temp, \
+		setpoint, epoch_date')
 
 	parser.add_argument('--influxfile', type=str, metavar='path', 
 		default='./influx_data.csv', help='file to store influxdb queries to')
@@ -128,13 +157,9 @@ def main():
 			print(dev_id, dev_props)
 		return
 
-	if (args.tempids != None):
-		for tid in args.tempids:
-			get_temperature(args.domoticzdb, tid, devices[tid]['dev_name'], outfile=args.influxfile)
-
-	if (args.meterids != None):
-		for tid in args.meterids:
-			get_meter(args.domoticzdb, tid, devices[tid]['dev_name'], outfile=args.influxfile)
+	if (args.devids != None):
+		for tid in args.devids:
+			get_data(args.domoticzdb, tid, meterquery=args.meterquery, multimeterquery=args.multimeterquery, tempquery=args.tempquery, outfile=args.influxfile)
 
 
 if __name__ == "__main__":
